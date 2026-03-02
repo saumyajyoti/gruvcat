@@ -49,13 +49,41 @@ function M.load()
 
   local cat_opts = vim.deepcopy(cfg.catppuccin)
   cat_opts.color_overrides = {
+    all   = user_overrides.all,
     mocha = vim.tbl_extend("force", dark_palette,  user_overrides.mocha or {}),
     latte = vim.tbl_extend("force", light_palette, user_overrides.latte or {}),
   }
 
-  -- 5. Apply catppuccin setup and activate the specific flavor colorscheme
+  -- 5. Apply catppuccin setup and activate the specific flavor colorscheme.
   catppuccin.setup(cat_opts)
+
+  -- catppuccin's compiler captures `require("catppuccin").options` into a
+  -- module-level local at require()-time. catppuccin.setup() replaces the
+  -- M.options table entirely, so the cached compiler still holds a reference
+  -- to the old (pre-setup) options and compiles with vanilla catppuccin colors.
+  -- Purging catppuccin submodules from package.loaded forces the compiler to
+  -- re-require catppuccin and pick up the updated options on the next compile,
+  -- which is the same approach used by catppuccin's own :CatppuccinCompile.
+  for name in pairs(package.loaded) do
+    if name:match("^catppuccin%.") then
+      package.loaded[name] = nil
+    end
+  end
+
+  if type(catppuccin.compile) == "function" then
+    catppuccin.compile()
+  end
   vim.cmd("colorscheme catppuccin-" .. flavour)
+
+  -- Re-apply after UIEnter so the colorscheme survives other eager plugins
+  -- (e.g. snacks.nvim) that also run at priority=1000 and may reset it.
+  vim.api.nvim_create_autocmd("UIEnter", {
+    once = true,
+    nested = true,
+    callback = function()
+      vim.cmd("colorscheme catppuccin-" .. flavour)
+    end,
+  })
 end
 
 return M
